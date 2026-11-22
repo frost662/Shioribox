@@ -1,0 +1,41 @@
+name: Windows build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Test and build (Windows x64)
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: source/shioribox-app/go.mod
+          cache: true
+          cache-dependency-path: source/shioribox-app/go.sum
+
+      - name: Run Go tests
+        working-directory: source/shioribox-app
+        run: go test ./...
+
+      - name: Build ShioriBox
+        working-directory: source/shioribox-app
+        run: go build -ldflags="-H windowsgui" -o ../../ShioriBox.exe .
+
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: ShioriBox-windows-x64
+          path: ShioriBox.exe
+          if-no-files-found: error

@@ -1,0 +1,52 @@
+name: Build Windows release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Package ShioriBox for Windows
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: source/shioribox-app/go.mod
+          cache: true
+          cache-dependency-path: source/shioribox-app/go.sum
+
+      - name: Run Go tests
+        working-directory: source/shioribox-app
+        run: go test ./...
+
+      - name: Build ShioriBox
+        working-directory: source/shioribox-app
+        run: go build -ldflags="-H windowsgui" -o ../../ShioriBox.exe .
+
+      - name: Prepare installer files
+        shell: pwsh
+        run: Copy-Item README.md README.txt
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build setup and update installers
+        shell: cmd
+        run: installer\build-installer.bat
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            ShioriBox.exe
+            installer/output/ShioriBox-Setup-*.exe
+            installer/output/ShioriBox-Update-*.exe
