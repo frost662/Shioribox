@@ -17,7 +17,7 @@ func TestVersionCompare(t *testing.T) {
 		}
 	}
 	names := []string{"source.zip", "ShioriBox-Setup-1.20.0.exe", "ShioriBox-Update-1.20.0.exe"}
-	if pickInstaller(names) != 2 || pickInstaller([]string{"a.zip"}) != -1 || pickInstaller(names[:2]) != 1 {
+	if pickInstaller(names) != 2 || pickInstaller([]string{"a.zip"}) != -1 || pickInstaller(names[:2]) != -1 || pickInstaller([]string{"ShioriBox_Portable.zip", "ShioriBox-Setup-1.exe"}) != -1 {
 		t.Fatal("pickInstaller")
 	}
 }
@@ -41,10 +41,16 @@ func TestUpdateCheckGitHubAndManifest(t *testing.T) {
 	st, _ := newStore(d)
 	a := &App{store: st, dataDir: d}
 
+	oldSrc := updateSource
+	defer func() { updateSource = oldSrc }()
+	if oldSrc != "frost662/Shioribox" {
+		t.Fatal("the update address must be frost662/Shioribox")
+	}
+	updateSource = ""
 	if info := a.updateCheck(); info.Error == "" || info.Available {
 		t.Fatalf("no source should be an error: %+v", info)
 	}
-	st.Update(func(l *Library) error { l.Settings.UpdateSource = "me/shiori"; return nil })
+	updateSource = "me/shiori"
 	info := a.updateCheck()
 	if info.Error != "" || !info.Available || info.Latest != "99.0.0" || info.Name != "ShioriBox-Update-99.0.0.exe" || info.Size != 7 || info.Notes != "New things" {
 		t.Fatalf("%+v", info)
@@ -53,11 +59,11 @@ func TestUpdateCheckGitHubAndManifest(t *testing.T) {
 	if s := a.updateStatus()["info"].(UpdateInfo); !s.Skipped {
 		t.Fatal("skip not honoured")
 	}
-	st.Update(func(l *Library) error { l.Settings.UpdateSource = "https://example.com/latest.json"; return nil })
+	updateSource = "https://example.com/latest.json"
 	if info := a.updateCheck(); info.Error != "" || info.Available || info.Latest != "0.0.1" {
 		t.Fatalf("%+v", info)
 	}
-	st.Update(func(l *Library) error { l.Settings.UpdateSource = "me/missing"; return nil })
+	updateSource = "me/missing"
 	if info := a.updateCheck(); info.Error == "" || !strings.Contains(info.Error, "404") {
 		t.Fatalf("%+v", info)
 	}

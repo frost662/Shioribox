@@ -14,7 +14,7 @@ import (
 // Library snapshots: small timestamped copies of library.json (game details, playtime, collections).
 // They are taken automatically, before risky changes, and on demand.
 
-const snapshotKeep = 30
+const snapshotKeep = 3
 
 var snapName = regexp.MustCompile(`^library-\d{8}-\d{6}(-[a-z]+)?\.json$`)
 

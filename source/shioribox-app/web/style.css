@@ -528,3 +528,8 @@ body.panic #panic{display:flex}
 .upd-new{margin-top:12px;padding:12px;border:1px solid var(--accent, #e0607e);border-radius:10px}
 .upd-notes{white-space:pre-wrap;font:inherit;font-size:13px;color:var(--muted);max-height:180px;overflow:auto;margin:8px 0 0}
 .upd-chip{margin-top:4px;padding:2px 8px;border-radius:999px;border:1px solid var(--accent, #e0607e);background:transparent;color:var(--accent, #e0607e);font-size:11px;cursor:pointer}
+
+#upd-pop{position:fixed;top:16px;right:16px;z-index:9000;max-width:320px;padding:12px 34px 12px 14px;border-radius:12px;background:var(--surface2, #23232e);border:1px solid var(--accent, #e0607e);box-shadow:0 8px 28px rgba(0,0,0,.45);cursor:pointer;display:flex;flex-direction:column;gap:2px;font-size:13px;animation:uppop .25s ease-out}
+#upd-pop b{color:var(--accent, #e0607e)}#upd-pop span{color:var(--text, #ddd)}
+#upd-pop .up-x{position:absolute;top:4px;right:6px;background:none;border:0;color:var(--muted, #999);font-size:18px;line-height:1;cursor:pointer}
+@keyframes uppop{from{transform:translateY(-8px);opacity:0}to{transform:none;opacity:1}}

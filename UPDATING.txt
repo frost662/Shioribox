@@ -1,0 +1,29 @@
+HOW TO PUBLISH A SHIORIBOX UPDATE
+=================================
+
+ShioriBox already knows where updates live: the GitHub repository  frost662/Shioribox  (built in, nothing to type).
+It checks when the app starts and then every 6 hours. If a newer version exists, a message appears in the app.
+Clicking the message opens Settings -> Updates, where "Update now" downloads  ShioriBox-Update-<version>.exe
+(never the Setup installer or the portable zip), closes ShioriBox and runs it. Library and settings stay.
+
+For every new version
+---------------------
+1. Raise the version number in TWO places (they must match the release tag):
+     source\shioribox-app\main.go     const version = "1.21.0"
+     installer\ShioriBox.iss          #define AppVersion "1.21.0"
+2. Build ShioriBox.exe, then run installer\build-installer.bat.
+   It makes  ShioriBox-Setup-1.21.0.exe  and  ShioriBox-Update-1.21.0.exe.
+3. On GitHub: Releases -> Draft a new release.
+     Tag:    v1.21.0
+     Notes:  a few lines on what changed (shown inside the app)
+     Attach: ShioriBox-Update-1.21.0.exe   (and the Setup / portable zip for new users if you like)
+   Publish release.
+4. Running copies see it at next start (or within 6 hours, or via Settings -> Updates -> Check for updates).
+
+Notes
+-----
+- The repository must be PUBLIC.
+- If a release has no ShioriBox-Update-*.exe attached, "Update now" tells the user so; "Release page" still works.
+- Portable copies can use the Update installer too if installed, otherwise use "Release page".
+- Versions older than 1.20.0 have no updater: install 1.20.0 once by hand.
+- "Skip this version" hides one release; newer ones still show.

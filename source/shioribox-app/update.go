@@ -23,8 +23,9 @@ import (
 	"time"
 )
 
-// updateSourceDefault is used when the user has not typed one in Settings ("" = checking is off).
-const updateSourceDefault = ""
+// updateSource is where new versions are published: the GitHub repository that holds ShioriBox's releases.
+// (A variable only so tests can point it elsewhere.)
+var updateSource = "frost662/Shioribox"
 
 type UpdateInfo struct {
 	Current   string `json:"current"`
@@ -99,26 +100,16 @@ func updateGetJSON(u string, v any) error {
 	return json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(v)
 }
 
-// pickInstaller chooses the update installer among a release's files: "update" in the name first, then "setup".
+// pickInstaller chooses the update installer among a release's files: only ShioriBox-Update-<version>.exe, never the
+// first-time Setup installer or the portable zip. -1 when the release has none.
 func pickInstaller(names []string) int {
-	best, score := -1, 0
 	for i, n := range names {
 		l := strings.ToLower(n)
-		if !strings.HasSuffix(l, ".exe") {
-			continue
-		}
-		s := 1
-		if strings.Contains(l, "setup") {
-			s = 2
-		}
-		if strings.Contains(l, "update") {
-			s = 3
-		}
-		if s > score {
-			best, score = i, s
+		if strings.HasSuffix(l, ".exe") && strings.Contains(l, "update") && !strings.Contains(l, "setup") {
+			return i
 		}
 	}
-	return best
+	return -1
 }
 
 // fetchLatest reads the newest published version from the source.
@@ -177,22 +168,17 @@ func fetchLatest(source string) (latest, notes, page, download, name string, siz
 	return
 }
 
-func (a *App) updateSource() (src string, off bool, skip string) {
-	a.store.View(func(l *Library) {
-		src, off, skip = l.Settings.UpdateSource, l.Settings.UpdateOff, l.Settings.UpdateSkip
-	})
-	if strings.TrimSpace(src) == "" {
-		src = updateSourceDefault
-	}
-	return
+func (a *App) updateSource() (src string, skip string) {
+	a.store.View(func(l *Library) { skip = l.Settings.UpdateSkip })
+	return updateSource, skip
 }
 
 // updateCheck asks the source and remembers the answer.
 func (a *App) updateCheck() UpdateInfo {
-	src, _, skip := a.updateSource()
+	src, skip := a.updateSource()
 	info := UpdateInfo{Current: version, Checked: time.Now().Format(time.RFC3339)}
 	if src == "" {
-		info.Error = "Set where updates are published first."
+		info.Error = "No update address is configured."
 	} else if latest, notes, page, dl, name, size, err := fetchLatest(src); err != nil {
 		info.Error = err.Error()
 	} else {
@@ -207,23 +193,21 @@ func (a *App) updateCheck() UpdateInfo {
 }
 
 func (a *App) updateLoop() {
-	time.Sleep(12 * time.Second)
+	time.Sleep(3 * time.Second) // right after launch
 	for {
-		if src, off, _ := a.updateSource(); src != "" && !off {
-			a.updateCheck()
-		}
-		time.Sleep(24 * time.Hour)
+		a.updateCheck()
+		time.Sleep(6 * time.Hour) // and now and then while the app stays open
 	}
 }
 
 func (a *App) updateStatus() map[string]any {
-	src, off, skip := a.updateSource()
+	src, skip := a.updateSource()
 	a.upd.mu.Lock()
 	info := a.upd.info
 	a.upd.mu.Unlock()
 	info.Current = version
 	info.Skipped = info.Available && skip == info.Latest
-	return map[string]any{"source": src, "auto": !off, "info": info, "canInstall": runtime.GOOS == "windows"}
+	return map[string]any{"source": src, "info": info, "canInstall": runtime.GOOS == "windows"}
 }
 
 // downloadInstaller fetches the update installer into the data folder. Only https, only from the places releases live.
@@ -290,28 +274,16 @@ func (a *App) updateRoutes(mux *http.ServeMux) {
 		a.updateCheck()
 		writeJSON(w, 200, a.updateStatus())
 	})
-	mux.HandleFunc("PUT /api/update/source", func(w http.ResponseWriter, r *http.Request) {
+	// "Skip this version": no popup for it any more (a newer one still shows)
+	mux.HandleFunc("PUT /api/update/skip", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
-			Source string `json:"source"`
-			Auto   bool   `json:"auto"`
-			Skip   string `json:"skip"`
+			Version string `json:"version"`
 		}
 		if err := decode(r, &in); err != nil {
 			fail(w, 400, "bad request")
 			return
 		}
-		in.Source = strings.TrimSpace(in.Source)
-		if in.Source != "" && !reGitHubRepo.MatchString(in.Source) && !strings.HasPrefix(strings.ToLower(in.Source), "https://") {
-			fail(w, 400, "use a GitHub repository like owner/repo, or an https address")
-			return
-		}
-		a.store.Update(func(l *Library) error {
-			l.Settings.UpdateSource, l.Settings.UpdateOff = in.Source, !in.Auto
-			if in.Skip != "" {
-				l.Settings.UpdateSkip = in.Skip
-			}
-			return nil
-		})
+		a.store.Update(func(l *Library) error { l.Settings.UpdateSkip = strings.TrimSpace(in.Version); return nil })
 		writeJSON(w, 200, a.updateStatus())
 	})
 	mux.HandleFunc("POST /api/update/install", func(w http.ResponseWriter, r *http.Request) {
@@ -319,12 +291,12 @@ func (a *App) updateRoutes(mux *http.ServeMux) {
 			fail(w, 400, "installing updates works in the Windows app only")
 			return
 		}
-		src, _, _ := a.updateSource()
+		src, _ := a.updateSource()
 		a.upd.mu.Lock()
 		info := a.upd.info
 		a.upd.mu.Unlock()
 		if !info.Available || info.Download == "" {
-			fail(w, 400, "no installer is available for this update; open the release page instead")
+			fail(w, 400, "this release has no ShioriBox-Update installer attached; open the release page instead")
 			return
 		}
 		path, err := a.downloadInstaller(info, src)

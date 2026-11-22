@@ -684,9 +684,9 @@ function renderSettings() {
         <label><span>Picture position</span><select id="bg-pos"><option value="center" ${st.bgPos === 'center' ? 'selected' : ''}>Center</option><option value="top" ${st.bgPos === 'top' ? 'selected' : ''}>Top</option><option value="bottom" ${st.bgPos === 'bottom' ? 'selected' : ''}>Bottom</option></select></label>
       </div><button class="btn sm" data-act="bg-reset">Reset sliders</button>` : ''}
     </div>
-    <div class="panel"><h2>Library snapshots</h2><p class="muted" style="margin-top:0">ShioriBox keeps small copies of your library list (details, playtime, collections) in the <code>library-backups</code> folder inside the data folder: when it starts, every few hours while open, before removing games in bulk and before a restore. The newest 30 are kept. Cover images and save files are not in them — export the library zip above or copy the whole data folder for a complete backup.</p>
+    <div class="panel"><h2>Library snapshots</h2><p class="muted" style="margin-top:0">ShioriBox keeps small copies of your library list (details, playtime, collections) in the <code>library-backups</code> folder inside the data folder: when it starts, every few hours while open, before removing games in bulk and before a restore. Only the newest 3 are kept; older ones are deleted automatically. Cover images and save files are not in them — export the library zip above or copy the whole data folder for a complete backup.</p>
       <div class="row" style="margin-bottom:12px"><button class="btn primary" data-act="snap-now">Back up now</button><button class="btn" data-act="snap-open">Open backup folder</button></div><div id="snaplist"><p class="muted">Loading…</p></div></div>
-    <div class="panel"><h2>Updates</h2><p class="muted" style="margin-top:0">ShioriBox ${S.info.version} is installed. Tell it where new versions are published and it will check once a day and tell you when one is ready.</p>
+    <div class="panel"><h2>Updates</h2><p class="muted" style="margin-top:0">ShioriBox ${S.info.version} is installed.</p>
       <div id="upd-box"><p class="muted">Loading…</p></div></div>
     <div class="panel about"><img src="/logo.png" alt=""><div><h2>About</h2><p class="muted" style="margin-top:0">ShioriBox ${S.info.version}. Game metadata and covers come from <a href="https://vndb.org" target="_blank" rel="noopener">VNDB</a> (data under the ODbL; cover images belong to their owners). The app only listens on this computer (127.0.0.1).</p>
       <button class="btn danger" data-act="quit">Quit ShioriBox</button></div></div></div>`;
@@ -710,42 +710,52 @@ function drawUpd() {
   const box = $('#upd-box'), u = S.upd; if (!box || !u) return;
   const i = u.info || {};
   let st = '';
-  if (i.error && i.checked) st = h`<p class="hint" style="color:var(--bad);margin:10px 0 0">${i.error}</p>`;
-  else if (i.available) st = h`<div class="upd-new"><b>Version ${i.latest} is available</b> <span class="muted">(you have ${i.current})</span>
+  if (i.available) st = h`<div class="upd-new"><b>ShioriBox ${i.latest} is available</b> <span class="muted">(you have ${i.current})</span>
       ${i.notes ? h`<pre class="upd-notes">${i.notes}</pre>` : ''}
-      <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">${i.download && u.canInstall ? h`<button class="btn primary" data-act="upd-install">Download &amp; install</button>` : ''}${i.page ? h`<a class="btn" href="${i.page}" target="_blank" rel="noopener noreferrer">Release page</a>` : ''}${!i.skipped ? h`<button class="btn" data-act="upd-skip" data-v="${i.latest}">Skip this version</button>` : ''}</div>
-      ${i.download && u.canInstall ? h`<p class="hint" style="margin:8px 0 0">ShioriBox downloads the installer, closes itself and starts it. Your library and settings are kept.</p>` : ''}</div>`;
-  else if (i.checked) st = h`<p class="hint" style="margin:10px 0 0">You're up to date (latest published: ${i.latest}). Checked ${new Date(i.checked).toLocaleString()}.</p>`;
-  setHTML(box, h`<label class="f"><span>Where updates are published — a GitHub repository (<code>owner/repo</code>) or the https address of a version file</span><input type="text" id="upd-src" value="${u.source}" placeholder="owner/repo"></label>
-    <label class="chk" style="margin:6px 0 10px"><input type="checkbox" id="upd-auto" ${u.auto ? 'checked' : ''}>Check automatically once a day</label>
-    <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn" data-act="upd-save">Save &amp; check now</button></div>${st}`);
+      <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">${i.download && u.canInstall ? h`<button class="btn primary" data-act="upd-install">Update now</button>` : ''}${i.page ? h`<a class="btn" href="${i.page}" target="_blank" rel="noopener noreferrer">Release page</a>` : ''}${!i.skipped ? h`<button class="btn" data-act="upd-skip" data-v="${i.latest}">Skip this version</button>` : ''}</div>
+      <p class="hint" style="margin:8px 0 0">${i.download && u.canInstall ? 'Update now downloads the update, closes ShioriBox and installs it. Your library and settings are kept.' : 'This release has no automatic update attached. Open the release page to download it.'}</p></div>`;
+  else if (i.error && i.checked) st = h`<p class="hint" style="color:var(--bad);margin:10px 0 0">${i.error}</p>`;
+  else if (i.checked) st = h`<p class="hint" style="margin:10px 0 0">You're up to date. Checked ${new Date(i.checked).toLocaleString()}.</p>`;
+  setHTML(box, h`<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center"><button class="btn" data-act="upd-check">Check for updates</button><span class="muted tiny">ShioriBox also checks by itself every time it starts.</span></div>${st}`);
 }
 async function loadUpd() {
   try { S.upd = await api('GET', '/api/update'); } catch { return; }
   drawUpd();
 }
-async function updSave() {
+// the popup that tells you an update exists; clicking it opens Settings → Updates
+function updPopup(i) {
+  if (!i || !i.available || i.skipped || S.updShown === i.latest) return;
+  S.updShown = i.latest;
+  const old = $('#upd-pop'); if (old) old.remove();
+  const p = document.createElement('div'); p.id = 'upd-pop'; p.setAttribute('role', 'alert');
+  setHTML(p, h`<button class="up-x" aria-label="Dismiss" data-x="1">×</button><b>Update available</b><span>ShioriBox ${i.latest} is ready. Click here to update.</span>`);
+  p.addEventListener('click', e => { p.remove(); if (e.target.closest('[data-x]')) return; S.view = 'settings'; render(); });
+  document.body.appendChild(p);
+}
+async function updPoll() {
   try {
-    await api('PUT', '/api/update/source', { source: $('#upd-src').value.trim(), auto: $('#upd-auto').checked });
-    const b = $('[data-act="upd-save"]'); if (b) { b.disabled = true; b.textContent = 'Checking…'; }
-    S.upd = await api('POST', '/api/update/check', {});
-  } catch (e) { toast(e.message, 'err'); }
-  drawUpd(); renderSide();
+    S.upd = await api('GET', '/api/update');
+    renderSide();
+    if (S.view === 'settings') drawUpd();
+    updPopup(S.upd.info);
+  } catch { }
 }
 document.addEventListener('click', async e => {
   const b = e.target.closest('[data-act^="upd-"]'); if (!b) return;
   const a = b.dataset.act;
-  if (a === 'upd-save') updSave();
-  else if (a === 'upd-skip') { try { S.upd = await api('PUT', '/api/update/source', { source: S.upd.source, auto: S.upd.auto, skip: b.dataset.v }); } catch (er) { toast(er.message, 'err'); } drawUpd(); renderSide(); }
+  if (a === 'upd-check') {
+    b.disabled = true; b.textContent = 'Checking…';
+    try { S.upd = await api('POST', '/api/update/check', {}); updPopup(S.upd.info); } catch (er) { toast(er.message, 'err'); }
+    drawUpd(); renderSide();
+  } else if (a === 'upd-skip') { try { S.upd = await api('PUT', '/api/update/skip', { version: b.dataset.v }); } catch (er) { toast(er.message, 'err'); } drawUpd(); renderSide(); }
   else if (a === 'upd-install') {
     b.disabled = true; b.textContent = 'Downloading…';
     try { await api('POST', '/api/update/install', {}); toast('Starting the installer… ShioriBox will close.', 'ok'); }
-    catch (er) { toast(er.message, 'err'); b.disabled = false; b.textContent = 'Download & install'; }
+    catch (er) { toast(er.message, 'err'); b.disabled = false; b.textContent = 'Update now'; }
   } else if (a === 'upd-open') { S.view = 'settings'; render(); }
 });
-async function updPoll() { try { const had = S.upd && S.upd.info && S.upd.info.available && !S.upd.info.skipped; S.upd = await api('GET', '/api/update'); const now = S.upd.info.available && !S.upd.info.skipped; if (now !== had) { renderSide(); if (S.view === 'settings') drawUpd(); if (now && !had) toast(`ShioriBox ${S.upd.info.latest} is available — see Settings → Updates`, 'ok'); } } catch { } }
-setInterval(updPoll, 300000);
-setTimeout(updPoll, 20000);
+// right after launch (the app checks as it starts), then every few minutes while it is open
+setTimeout(updPoll, 7000); setTimeout(updPoll, 20000); setInterval(updPoll, 300000);
 
 /* ---------- auto-add folders ---------- */
 function drawAuto() {

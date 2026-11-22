@@ -5,7 +5,7 @@
 ; The update one is this same script compiled with /DUPDATE (see build-installer.bat).
 
 #define AppName "ShioriBox"
-#define AppVersion "1.20.0"
+#define AppVersion "1.21.0"
 #define AppExe "ShioriBox.exe"
 #ifdef UPDATE
   #define Kind "Update"

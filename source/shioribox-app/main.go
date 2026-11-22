@@ -25,7 +25,7 @@ import (
 //go:embed web
 var webFS embed.FS
 
-const version = "1.20.0"
+const version = "1.21.0"
 
 type App struct {
 	auto    autoState
@@ -848,7 +848,7 @@ func (a *App) routes() http.Handler {
 			in.BgImage, in.BgBlur, in.BgOverlay, in.BgPanel, in.BgPos = l.Settings.BgImage, l.Settings.BgBlur, l.Settings.BgOverlay, l.Settings.BgPanel, l.Settings.BgPos
 			in.PanicKey, in.PanicTapKey, in.PanicTaps = l.Settings.PanicKey, l.Settings.PanicTapKey, l.Settings.PanicTaps // own endpoints
 			in.WatchFolders, in.AutoSeen, in.AutoLookupOff = l.Settings.WatchFolders, l.Settings.AutoSeen, l.Settings.AutoLookupOff
-			in.UpdateSource, in.UpdateOff, in.UpdateSkip = l.Settings.UpdateSource, l.Settings.UpdateOff, l.Settings.UpdateSkip
+			in.UpdateSkip = l.Settings.UpdateSkip
 			l.Settings = in
 			return nil
 		})

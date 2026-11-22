@@ -26,9 +26,12 @@ ShioriBox brings your visual novel collection, play sessions, metadata, guides, 
 - **CG gallery** — browse available CG artwork from supported sources.
 - **Guides and notes** — keep walkthroughs and useful information alongside each title.
 - **Japanese locale support** — launch games with the bundled Shiori Locale engine, Locale Emulator, or a custom launcher.
-- **Library maintenance** — scan folders for games, import and export your library, and create or restore snapshots.
+- **Anime tab** — if a visual novel has an anime adaptation, its episodes are listed and play in a built-in player.
+- **Auto-add games** — add watched folders in Settings and new games found there are added to your library automatically.
+- **Library maintenance** — scan folders for games, import and export your library, and create or restore snapshots (the newest 3 are kept automatically).
+- **Automatic updates** — ShioriBox checks for a new version when it starts; open Settings → Updates and press *Update now*.
 - **Personalization** — dark and light themes, custom backgrounds, and adjustable interface appearance.
-- **Privacy controls** — optional cover blurring and a configurable quick privacy screen.
+- **Privacy controls** — optional cover blurring, plus a global hotkey (or a rapid multi-tap of any key) that instantly blurs the app and hides it to the tray without closing it.
 
 ## Screenshots
 
@@ -65,6 +68,10 @@ ShioriBox brings your visual novel collection, play sessions, metadata, guides, 
 4. Launch ShioriBox and add your visual novels to the library.
 
 ShioriBox uses the Microsoft Edge **WebView2 Runtime** for its native window. It is included with Windows 11 and many up-to-date Windows 10 installations. If it is missing, install the free [Evergreen WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
+
+> **Updating:** after the first install, ShioriBox notifies you when a new release is published. Click the message, then *Update now* in Settings. Your library and settings are kept. Publishing steps are in [UPDATING.txt](UPDATING.txt).
+
+> **Blank window?** On older Windows 10 installs, install the Evergreen WebView2 Runtime.
 
 > **Note:** This repository may contain source updates newer than the latest published installer. Check the release notes when choosing a download.
 
