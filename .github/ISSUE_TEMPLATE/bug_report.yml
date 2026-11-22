@@ -1,0 +1,26 @@
+---
+name: Bug report
+about: Report a reproducible ShioriBox problem
+title: "[Bug]: "
+labels: bug
+assignees: ""
+---
+
+## Environment
+- ShioriBox version:
+- Windows version:
+- Installation type (setup / portable / source build):
+
+## Describe the problem
+A clear description of what happened.
+
+## Steps to reproduce
+1.
+2.
+3.
+
+## Expected behaviour
+What did you expect to happen?
+
+## Logs or screenshots
+Add relevant details. Please remove personal paths, account details, and private library information before posting.
