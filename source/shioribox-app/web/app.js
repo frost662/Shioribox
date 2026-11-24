@@ -136,6 +136,7 @@ function renderSide() {
     ${navb('library', 'library', 'Library', lib && !S.fav)}
     ${h`<button class="rbtn ${lib && S.fav ? 'on' : ''}" data-act="nav-fav" title="Favorites" aria-label="Favorites">${icon('star')}<span>Favorites</span></button>`}
     ${navb('discover', 'search', 'Discover', S.view === 'discover')}
+    ${navb('anime', 'play', 'Anime', S.view === 'anime')}
     ${navb('stats', 'chart', 'Stats', S.view === 'stats')}
     <div class="rail-gap"></div>
     ${navb('settings', 'gear', 'Settings', S.view === 'settings')}
@@ -144,7 +145,7 @@ function renderSide() {
 }
 function renderTopbar() {
   const tb = $('#topbar'); if (!tb) return;
-  const title = { home: 'Home', discover: 'Discover', stats: 'Statistics', settings: 'Settings' }[S.view]
+  const title = { home: 'Home', discover: 'Discover', anime: 'Anime', stats: 'Statistics', settings: 'Settings' }[S.view]
     || (S.fav ? 'Favorites' : S.cat ? ((S.lib.categories.find(c => c.id === S.cat) || {}).name || 'Library') : 'Library');
   const showSearch = S.view === 'home' || S.view === 'library';
   const showActions = showSearch && S.lib.games.length > 0;
@@ -699,6 +700,8 @@ function render() {
   const m = $('#main');
   const keepSearch = document.activeElement && document.activeElement.id === 'q';
   const pos = m.scrollTop;
+  if (S.view === 'anime') { animePage(m); return; }
+  animeLeave();
   setHTML(m, S.view === 'home' ? renderHome() : S.view === 'discover' ? renderDiscover() : S.view === 'stats' ? renderStats() : S.view === 'settings' ? renderSettings() : renderLibrary());
   m.scrollTop = pos;
   if (S.view === 'settings') { loadSnaps(); loadPanic(); loadAuto(); loadUpd(); }
@@ -1030,10 +1033,10 @@ function viewOverview(dlg, g) {
 const ANIME_SITES = [['AniHentai', 'https://anihentai.com']];
 async function viewAnime(dlg, g) {
   const body = dlg.body;
-  const a = dlg.anime && dlg.anime.for === g.id ? dlg.anime : (dlg.anime = { for: g.id, busy: false, sites: null, err: '', eps: {}, show: false, bound: dlg.anime && dlg.anime.bound });
+  const a = dlg.anime && dlg.anime.for === g.id ? dlg.anime : (dlg.anime = { for: g.id, busy: false, sites: null, err: '', eps: {}, show: !!g.page && (() => { try { return localStorage.getItem('an-show') === '1'; } catch { return false; } })(), bound: dlg.anime && dlg.anime.bound });
   if (a.play) stopPlay();
   const epKey = (site, url) => site + '|' + url;
-  const epItem = (it, list, site) => h`<span class="an-epw"><button class="btn sm an-ep" data-an="play" data-site="${site}" data-list="${list}" data-url="${it.url}" title="Play here">▶ ${it.n ? 'Episode ' + it.n : it.title}${it.n && it.title && !/episode|\bep\b/i.test(it.title) && it.title.length < 70 ? h`<span class="tiny muted"> · ${it.title}</span>` : ''}</button><button class="btn sm" data-cg="link" data-url="${it.url}" title="Open on the site in your browser" aria-label="Open on the site">↗</button></span>`;
+  const epItem = (it, list, site) => h`<span class="an-epw"><button class="btn sm an-ep ${a.seen && a.seen.has(it.url) ? 'seen' : ''}" data-an="play" data-site="${site}" data-list="${list}" data-url="${it.url}" title="${a.seen && a.seen.has(it.url) ? 'Watched · play again' : 'Play here'}">${a.seen && a.seen.has(it.url) ? '✓' : '▶'} ${it.n ? 'Episode ' + it.n : it.title}${it.n && it.title && !/episode|\bep\b/i.test(it.title) && it.title.length < 70 ? h`<span class="tiny muted"> · ${it.title}</span>` : ''}</button><button class="btn sm" data-cg="link" data-url="${it.url}" title="Open on the site in your browser" aria-label="Open on the site">↗</button></span>`;
   const seriesCard = (s, it) => {
     const e = a.eps[epKey(s.id, it.url)];
     return h`<div class="an-card"><div class="an-th">${it.thumb ? h`<img class="${a.show ? '' : 'nsfw'}" src="${it.thumb}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}</div>
@@ -1043,12 +1046,14 @@ async function viewAnime(dlg, g) {
   };
   const draw = () => {
     if (dlg.cur() !== 'anime' || a.play) return;
+    if (g.page) return drawPage();
     const q = encodeURIComponent;
     const total = a.sites ? a.sites.reduce((n, s) => n + s.items.length, 0) : 0;
     const errs = a.sites ? a.sites.filter(s => s.error) : [];
     let main;
     if (a.busy || !a.sites) main = h`<p class="muted cg-st">${a.err || 'Searching AniHentai…'}</p>`;
     else if (!total && errs.length === a.sites.length) main = h`<p class="cg-st">Couldn't reach the anime sites (${errs.map(s => s.name).join(', ')}). Check your connection, or search them yourself below. <button class="btn sm" data-an="search">Try again</button></p>`;
+    else if (!total && g.page) main = h`<p class="cg-st"><strong>Nothing found${g.title ? ' for “' + g.title + '”' : ''}.</strong> <button class="btn sm" data-an="search">Search again</button></p>`;
     else if (!total) main = h`<p class="cg-st"><strong>No anime available for this visual novel.</strong>${errs.length ? h`<span class="tiny muted"> (${errs.map(s => s.name).join(', ')} could not be checked.)</span>` : ''} <button class="btn sm" data-an="search">Search again</button></p>`;
     else main = h`${a.sites.filter(s => s.items.length).map(s => {
       const series = s.items.filter(i => !i.episode), eps = s.items.filter(i => i.episode).sort((x, y) => x.n - y.n);
@@ -1056,11 +1061,11 @@ async function viewAnime(dlg, g) {
         ${series.map(it => seriesCard(s, it))}
         ${eps.length ? h`<div class="an-eps">${eps.map(x => epItem(x, 'site:' + s.id, s.id))}</div>` : ''}</section>`;
     })}${errs.length ? h`<p class="tiny muted">${errs.map(s => s.name).join(', ')} could not be checked.</p>` : ''}`;
-    setHTML(body, h`<p class="muted" style="margin-top:0">Anime adaptations of “${g.title}”, looked up by title on AniHentai. Episodes play right here (↗ opens the site instead). Adult thumbnails stay blurred until you press Unblur.</p>
+    setHTML(body, h`<p class="muted" style="margin-top:0">${g.page ? h`${g.title ? 'Results for “' + g.title + '” on AniHentai. ' : 'The latest on AniHentai. '}Episodes play right here (↗ opens the site instead). Adult thumbnails stay blurred until you press Unblur.` : h`Anime adaptations of “${g.title}”, looked up by title on AniHentai. Episodes play right here (↗ opens the site instead). Adult thumbnails stay blurred until you press Unblur.`}</p>
       <div class="chips" style="margin-bottom:10px"><button class="chip ghost" data-an="reveal">${a.show ? 'Blur images' : 'Unblur images'}</button><button class="chip ghost" data-an="search">Search again</button></div>
       ${main}
       ${a.sites ? h`<details class="cg-more"><summary class="tiny muted">What was checked</summary>${a.sites.map(s => h`<p class="tiny muted" style="margin:6px 0"><strong>${s.name}</strong>: ${s.error ? s.error : s.items.length + ' match(es)'}${(s.debug || []).map(d => h`<br>${d}`)}</p>`)}</details>` : ''}
-      <details class="cg-more"><summary class="tiny muted">Search the sites yourself</summary><div class="row" style="gap:8px;flex-wrap:wrap">${ANIME_SITES.map(([l, u]) => h`<button class="btn sm" data-cg="link" data-url="${u}/?s=${q(g.title)}">${l}</button>`)}</div></details>`);
+      ${g.page ? '' : h`<details class="cg-more"><summary class="tiny muted">Search the sites yourself</summary><div class="row" style="gap:8px;flex-wrap:wrap">${ANIME_SITES.map(([l, u]) => h`<button class="btn sm" data-cg="link" data-url="${u}/?s=${q(g.title)}">${l}</button>`)}</div></details>`}`);
   };
   const loadEps = async (site, url) => {
     const k = epKey(site, url); a.eps[k] = { busy: true };
@@ -1070,10 +1075,11 @@ async function viewAnime(dlg, g) {
     draw();
   };
   const search = async () => {
+    if (g.page) return pageLoad(true);
     if (a.busy) return;
     a.busy = true; a.err = ''; a.sites = null; a.eps = {}; draw();
     try {
-      const d = await api('GET', `/api/anime/search?q=${encodeURIComponent(g.title)}&alt=${encodeURIComponent(g.originalTitle && g.originalTitle !== g.title ? g.originalTitle : '')}`);
+      const d = g.page && !g.title ? await api('GET', '/api/anime/browse') : await api('GET', `/api/anime/search?q=${encodeURIComponent(g.title)}&alt=${encodeURIComponent(g.originalTitle && g.originalTitle !== g.title ? g.originalTitle : '')}`);
       a.sites = d.sites;
     } catch (e) { a.err = e.message; }
     a.busy = false; draw();
@@ -1087,7 +1093,7 @@ async function viewAnime(dlg, g) {
     if (dlg.anime && dlg.anime.hls) { try { dlg.anime.hls.destroy(); } catch { } dlg.anime.hls = null; }
     if (dlg.anime) dlg.anime.play = null;
   }
-  const listFor = key => key.startsWith('site:') ? (a.sites.find(s => s.id === key.slice(5)) || { items: [] }).items.filter(i => i.episode).sort((x, y) => x.n - y.n) : ((a.eps[key] || {}).list || []);
+  const listFor = key => key === 'grid' ? (a.items || []).filter(i => i.episode) : key.startsWith('site:') ? (a.sites.find(s => s.id === key.slice(5)) || { items: [] }).items.filter(i => i.episode).sort((x, y) => x.n - y.n) : ((a.eps[key] || {}).list || []);
   const loadHls = () => window.Hls ? Promise.resolve() : new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'hls.min.js'; s.onload = ok; s.onerror = () => no(new Error('player component missing')); document.head.appendChild(s); });
   const msg = t => { const m = $('#anmsg', body); if (m) { m.textContent = t; m.hidden = !t; } };
   const attach = async () => {
@@ -1125,9 +1131,10 @@ async function viewAnime(dlg, g) {
     if (P.status === 'loading') stage = h`<p class="muted an-wait">Finding the video…</p>`;
     else if (P.status === 'err') stage = h`<p class="muted an-wait">${P.err}</p>`;
     else if (P.mode === 'embed') stage = h`<iframe src="${P.embeds[P.ei]}" allowfullscreen allow="fullscreen; autoplay; encrypted-media" referrerpolicy="origin"></iframe>`;
+    else if (P.mode === 'external') stage = h`<div class="an-wait" style="text-align:center"><p style="margin:0 0 6px"><strong>${SITES[P.site] || 'This site'} plays its videos on its own page.</strong></p><p class="muted" style="margin:0 0 12px">It doesn't allow its player to be shown inside the page, so the episode opened in a ShioriBox browser window.</p><button class="btn primary" data-an="browse" data-url="${P.external}">Open it again</button> <button class="btn" data-cg="link" data-url="${P.external}">Open in my browser</button></div>`;
     else if (P.mode === 'video') stage = h`<video id="anv" controls autoplay playsinline></video>`;
     else stage = h`<p class="muted an-wait">No playable video was found on this page. Use “Open on the site”.</p>`;
-    setHTML(body, h`<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center"><button class="btn sm" data-an="stop">‹ Episodes</button><strong class="an-pt">${P.series || g.title} — ${title}</strong></div>
+    setHTML(body, h`<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center"><button class="btn sm" data-an="stop">‹ Episodes</button><strong class="an-pt">${g.page ? title : (P.series || g.title) + ' — ' + title}</strong></div>
       <div class="an-player">${stage}</div><p class="tiny muted" id="anmsg" hidden></p>
       <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px"><button class="btn sm" data-an="prev" ${P.i > 0 ? '' : 'disabled'}>‹ Previous</button><button class="btn sm" data-an="next" ${P.i + 1 < P.list.length ? '' : 'disabled'}>Next ›</button>
         ${P.mode === 'video' && P.sources.length > 1 ? P.sources.map((s, k) => h`<button class="btn sm ${k === P.si ? 'primary' : ''}" data-an="src" data-k="${k}" title="${s.label}">Source ${k + 1}${s.label ? ' · ' + s.label.split(' · ')[0] : ''}</button>`) : ''}
@@ -1136,25 +1143,164 @@ async function viewAnime(dlg, g) {
         <button class="btn sm" data-cg="link" data-url="${it.url}">Open on the site</button></div>`);
     if (P.mode === 'video') attach();
   };
+  const histSet = items => { a.hist = items || []; a.seen = new Set(a.hist.flatMap(e => e.seen || [])); };
+  const histLoad = () => api('GET', '/api/anime/history').then(d => { histSet(d.items); if (!a.play) draw(); }).catch(() => { });
+  const histRecord = (it, site) => {
+    const o = a.open, inf = o && (a.info || {})[o.url], d = inf && inf.data;
+    const ent = o ? { site: o.site, url: o.url, title: (d && d.title) || o.title, thumb: (d && d.poster) || o.thumb || '' } : { site: it.site || site, url: it.url, title: it.title || 'Episode', thumb: it.thumb || '' };
+    if (!ent.title) return;
+    api('POST', '/api/anime/history', { ...ent, epUrl: it.url, epTitle: it.title || '', epN: it.n || 0 }).then(r => histSet(r.items)).catch(() => { });
+  };
   const playAt = async (list, i, site) => {
     stopPlay();
     const it = list[i]; if (!it) return;
-    const P = a.play = { list, i, site, series: g.title, status: 'loading', mode: '', sources: [], embeds: [], si: 0, ei: 0, err: '' };
+    histRecord(it, site);
+    const P = a.play = { list, i, site, series: g.page ? '' : g.title, status: 'loading', mode: '', sources: [], embeds: [], si: 0, ei: 0, err: '' };
     drawPlayer();
     try {
-      const d = await api('GET', `/api/anime/source?site=${site}&url=${encodeURIComponent(it.url)}`);
+      const d = await api('GET', `/api/anime/source?site=${it.site || site}&url=${encodeURIComponent(it.url)}`);
       if (a.play !== P) return;
       P.sources = d.sources; P.embeds = d.embeds; P.status = 'ready';
-      P.mode = P.sources.length ? 'video' : P.embeds.length ? 'embed' : '';
+      P.mode = P.sources.length ? 'video' : P.embeds.length ? 'embed' : d.external ? 'external' : '';
+      if (d.external) { P.external = d.external; api('POST', '/api/browse', { url: d.external }).catch(err => toast(err.message, 'err')); }
     } catch (e) { if (a.play !== P) return; P.status = 'err'; P.err = e.message; }
     drawPlayer();
   };
+  // ----- Anime page: grid of cards from several sources, series detail, load more, random -----
+  const SITES = { anihentai: 'AniHentai', akih: 'Aki-H', hstream: 'HStream' };
+  const SITE_BASE = { anihentai: 'https://anihentai.com', akih: 'https://aki-h.com' };
+  const srcList = () => g.src === 'all' || !g.src ? Object.keys(SITES) : [g.src];
+  const pageUrl = (site, reset) => {
+    if (!reset) return `/api/anime/list?site=${site}&kind=url&v=${encodeURIComponent(a.next[site])}`;
+    if (site === 'hstream') {
+      const q = g.title ? `&kind=search&q=${encodeURIComponent(g.title)}` : '&kind=latest';
+      const tag = (g.hTag || '').toLowerCase().trim().replace(/[\s_]+/g, '-');
+      return `/api/anime/list?site=hstream${q}${tag ? '&tags=' + encodeURIComponent(tag) : ''}`;
+    }
+    const S = `site=${site}`;
+    if (g.startUrl && g.src === site) return `/api/anime/list?${S}&kind=url&v=${encodeURIComponent(g.startUrl)}`;
+    if (g.title) return `/api/anime/list?${S}&kind=search&q=${encodeURIComponent(g.title)}`;
+    if (site === 'anihentai') {
+      const fil = Object.entries(g.fil || {}).filter(([, v]) => v);
+      if (fil.length) return '/api/anime/list?kind=browse' + fil.map(([k, v]) => '&f=' + encodeURIComponent(k + ':' + v)).join('');
+    } else if (g.hTag) return `/api/anime/list?${S}&kind=tag&tags=${encodeURIComponent(g.hTag.toLowerCase().trim().replace(/[\s_]+/g, '-'))}`;
+    return `/api/anime/list?${S}&kind=latest`;
+  };
+  const hasNext = () => Object.values(a.next || {}).some(Boolean);
+  async function pageLoad(reset) {
+    if (a.busy || (!reset && !hasNext())) return;
+    if (reset) { a.showHist = false; a.items = []; a.next = {}; a.open = null; a.err = ''; a.dbg = ''; a.eps = {}; }
+    const sites = reset ? srcList() : Object.keys(a.next).filter(k => a.next[k]);
+    a.busy = true; draw();
+    const res = await Promise.all(sites.map(async site => {
+      try { return { site, d: await api('GET', pageUrl(site, reset)) }; } catch (e) { return { site, err: e.message }; }
+    }));
+    const have = new Set((a.items || []).map(i => i.url)), lists = [];
+    const dbg = [];
+    for (const r of res) {
+      if (r.err) { dbg.push(`${SITES[r.site]}: ${r.err}`); a.next[r.site] = ''; continue; }
+      a.next[r.site] = r.d.next || '';
+      dbg.push(`${SITES[r.site]}: ${r.d.url} → ${r.d.links} links, ${r.d.items.length} shown`);
+      const fresh = r.d.items.filter(i => { i.site = i.site || r.site; if (have.has(i.url)) return false; have.add(i.url); return true; });
+      if (!reset && !fresh.length) a.next[r.site] = '';
+      lists.push(fresh);
+    }
+    for (let i = 0; lists.some(l => i < l.length); i++) lists.forEach(l => { if (i < l.length) a.items.push(l[i]); });
+    a.dbg = dbg.join('\n');
+    a.err = !lists.length && res.length ? (res.find(r => r.err) || {}).err || '' : '';
+    a.busy = false; draw();
+  }
+  function pageOpen(i) {
+    const it = (a.items || [])[i]; if (!it) return;
+    if (it.episode) { const list = listFor('grid'); return playAt(list, Math.max(0, list.findIndex(x => x.url === it.url)), it.site || 'anihentai'); }
+    a.open = { site: it.site || 'anihentai', url: it.url, title: it.title, thumb: it.thumb };
+    loadInfo(it.url, a.open.site);
+  }
+  async function loadInfo(url, site) {
+    a.info = a.info || {};
+    if (a.info[url] && a.info[url].data) return draw();
+    a.info[url] = { busy: true }; draw();
+    try {
+      const d = await api('GET', `/api/anime/info?site=${site || 'anihentai'}&url=${encodeURIComponent(url)}`);
+      a.info[url] = { data: d }; a.eps[epKey(site || 'anihentai', url)] = { list: d.episodes };
+      const c = (a.items || []).find(i => i.url === url); if (c && !c.thumb && d.poster) c.thumb = d.poster;
+    } catch (e) { a.info[url] = { err: e.message }; }
+    draw();
+  }
+  // Cards the listing gave no picture for: fetch the cover from the series page, a few at a time.
+  let thumbBusy = 0;
+  function fillThumbs() {
+    for (const it of (a.items || [])) {
+      if (thumbBusy >= 3) return;
+      if (it.thumb || it.episode || it.tried) continue;
+      it.tried = true; thumbBusy++;
+      const site = it.site || 'anihentai';
+      api('GET', `/api/anime/info?site=${site}&url=${encodeURIComponent(it.url)}`).then(d => {
+        a.info = a.info || {}; a.info[it.url] = { data: d }; a.eps[epKey(site, it.url)] = { list: d.episodes };
+        if (d.poster && !it.thumb) { it.thumb = d.poster; const i = a.items.indexOf(it), th = body.querySelector(`.an-gc[data-i="${i}"] .th`); if (th && !th.querySelector('img')) { const im = document.createElement('img'); im.className = a.show ? '' : 'nsfw'; im.src = d.poster; im.alt = ''; im.loading = 'lazy'; th.prepend(im); const ph = th.querySelector('.ph'); if (ph) ph.remove(); } }
+      }).catch(() => { }).finally(() => { thumbBusy--; fillThumbs(); });
+    }
+  }
+  async function pageRandom() {
+    if (a.busy) return;
+    a.showHist = false; a.busy = true; a.err = ''; draw();
+    const order = srcList().sort(() => Math.random() - 0.5);
+    let it = null, lastErr = '';
+    for (const site of order) {
+      try { it = (await api('GET', `/api/anime/random?site=${site}`)).item; it.site = it.site || site; break; } catch (e) { lastErr = e.message; }
+    }
+    a.busy = false;
+    if (!it) { a.err = lastErr || 'No random pick available.'; return draw(); }
+    if (it.episode) return playAt([it], 0, it.site);
+    a.open = { site: it.site, url: it.url, title: it.title, thumb: it.thumb };
+    loadInfo(it.url, it.site);
+  }
+  function drawPage() {
+    const intro = h`<p class="muted" style="margin:0 0 8px">Episodes play right here (↗ opens the site instead). Thumbnails stay blurred until you press Unblur.</p>
+      <div class="chips" style="margin-bottom:10px"><button class="chip ghost" data-an="reveal">${a.show ? 'Blur images' : 'Unblur images'}</button></div>`;
+    if (a.open) {
+      const o = a.open, inf = (a.info || {})[o.url] || {}, d = inf.data, e = a.eps[epKey(o.site, o.url)];
+      const eps = d ? (e && e.list && e.list.length ? h`<div class="an-eps">${e.list.map(x => epItem(x, epKey(o.site, o.url), o.site))}</div>` : h`<p class="tiny muted">No episode links found on that page — use “Open page”.</p>`) : '';
+      const poster = d && d.poster || o.thumb;
+      const info = inf.busy || (!d && !inf.err) ? h`<p class="muted">Loading details…</p>` : inf.err ? h`<p class="tiny muted">Couldn't load details: ${inf.err} <button class="btn sm" data-an="retry">Try again</button></p>` : h`
+        <div class="an-det"><div class="an-poster">${poster ? h`<img class="${a.show ? '' : 'nsfw'}" src="${poster}" alt="" referrerpolicy="no-referrer">` : h`<div class="ph" style="--h:${hue(o.title)}">${[...o.title.trim()][0] || '?'}</div>`}<span class="an-site-tag">${SITES[o.site] || o.site}</span></div>
+          <div class="an-meta"><h2>${d.title || o.title}</h2>
+            ${d.facts.length || d.year ? h`<div class="an-facts">${d.year && !d.facts.some(f => /year|release|aired/i.test(f.k)) ? h`<div><span>Year</span>${d.year}</div>` : ''}${d.facts.map(f => h`<div><span>${f.k}</span>${f.v}</div>`)}</div>` : ''}
+            ${d.studios.length ? h`<div class="chips" style="margin:8px 0"><span class="tiny muted" style="align-self:center">Studio</span>${d.studios.map(x => h`<button class="chip" data-an="tag" data-kind="studio" data-site="${o.site}" data-path="${x.v}" data-label="${x.l}">${x.l}</button>`)}</div>` : ''}
+            ${d.genres.length ? h`<div class="chips" style="margin:8px 0"><span class="tiny muted" style="align-self:center">Tags</span>${d.genres.map(x => h`<button class="chip" data-an="tag" data-kind="tag" data-site="${o.site}" data-path="${x.v}" data-label="${x.l}">${x.l}</button>`)}</div>` : ''}
+            ${d.synopsis ? h`<p class="an-syn">${d.synopsis}</p>` : h`<p class="tiny muted">The site gives no description for this one.</p>`}</div></div>`;
+      return setHTML(body, h`<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center"><button class="btn sm" data-an="back">‹ Back</button><button class="btn sm" data-cg="link" data-url="${o.url}">Open page</button></div>
+        <div style="margin-top:12px">${info}</div>
+        ${d ? h`<h3 style="margin:16px 0 6px">Episodes${e && e.list ? ' (' + e.list.length + ')' : ''}</h3>${eps}` : ''}`);
+    }
+    if (a.showHist) {
+      const L = a.hist || [], when = t => { const m = Math.max(0, Math.round((Date.now() / 1000 - t) / 60)); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : m < 43200 ? Math.round(m / 1440) + ' d ago' : new Date(t * 1000).toLocaleDateString(); };
+      return setHTML(body, h`<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center"><button class="btn sm" data-an="hback">‹ Back</button><h3 style="margin:0">Watch history</h3>${L.length ? h`<button class="btn sm" data-an="hclear" style="margin-left:auto">Clear all</button>` : ''}</div>
+        ${L.length ? h`<div class="an-hist">${L.map((e, i) => h`<div class="an-hi"><button class="an-hth" data-an="hopen" data-i="${i}" title="Open details">${e.thumb ? h`<img class="${a.show ? '' : 'nsfw'}" src="${e.thumb}" alt="" loading="lazy" referrerpolicy="no-referrer">` : h`<div class="ph" style="--h:${hue(e.title)}">${[...e.title.trim()][0] || '?'}</div>`}<span class="an-site-tag">${SITES[e.site] || e.site}</span></button>
+          <div class="an-hb"><div class="an-ti">${e.title}</div><div class="tiny muted">Last watched: ${e.epN ? 'Episode ' + e.epN : (e.epTitle || 'an episode')} · ${when(e.at)}</div><div class="tiny muted">${(e.seen || []).length} episode${(e.seen || []).length === 1 ? '' : 's'} watched</div>
+            <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px"><button class="btn sm primary" data-an="hcont" data-i="${i}">▶ Continue</button><button class="btn sm" data-an="hopen" data-i="${i}">Episodes</button><button class="btn sm" data-an="hdel" data-i="${i}" title="Remove from history">Remove</button></div></div></div>`)}</div>` : h`<p class="muted cg-st">Nothing here yet. Anime you play will show up here, with the episodes you've watched.</p>`}`);
+    }
+    const items = a.items || [];
+    const cards = items.map((it, i) => h`<button class="an-gc" data-an="open" data-i="${i}" title="${it.title}"><div class="th">${it.thumb ? h`<img class="${a.show ? '' : 'nsfw'}" src="${it.thumb}" alt="" loading="lazy" referrerpolicy="no-referrer">` : h`<div class="ph" style="--h:${hue(it.title)}">${[...it.title.trim()][0] || '?'}</div>`}${it.episode ? h`<span class="an-badge">${it.n ? 'EP ' + it.n : 'Episode'}</span>` : ''}<span class="an-site-tag">${SITES[it.site] || ''}</span></div><div class="t">${it.title}</div></button>`);
+    const status = a.busy && !items.length ? h`<p class="muted cg-st">Loading…</p>` : a.err ? h`<p class="cg-st">${a.err} <button class="btn sm" data-an="search">Try again</button></p>` : !items.length ? h`<p class="cg-st"><strong>Nothing found.</strong> <button class="btn sm" data-an="search">Try again</button></p>` : '';
+    setHTML(body, h`${intro}${g.label ? h`<p class="tiny muted">Showing: <strong>${g.label}</strong></p>` : ''}${status}<div class="an-grid">${cards}</div>
+      ${items.length && hasNext() ? h`<div style="text-align:center;margin:14px 0"><button class="btn" data-an="more" ${a.busy ? 'disabled' : ''}>${a.busy ? 'Loading…' : 'Load more'}</button></div>` : ''}
+      ${a.dbg ? h`<details class="cg-more"><summary class="tiny muted">What was loaded</summary>${a.dbg.split('\n').map(l => h`<p class="tiny muted" style="margin:4px 0">${l}</p>`)}</details>` : ''}`);
+    fillThumbs();
+  }
   if (!a.bound) {
     a.bound = true;
     dlg.el.addEventListener('click', e => {
       const b = e.target.closest('[data-an]'); if (!b || dlg.cur() !== 'anime') return;
       const k = b.dataset.an, A = dlg.anime;
-      if (k === 'reveal') { A.show = !A.show; return dlg.animeDraw(); }
+      if (k === 'reveal') { A.show = !A.show; try { localStorage.setItem('an-show', A.show ? '1' : '0'); } catch { } return dlg.animeDraw(); }
+      if (k === 'browse') return api('POST', '/api/browse', { url: b.dataset.url }).catch(err => toast(err.message, 'err'));
+      if (k === 'open') return dlg.animeOpen(+b.dataset.i);
+      if (k[0] === 'h' && ['hback', 'hclear', 'hopen', 'hcont', 'hdel'].includes(k)) return dlg.animeHist(k.slice(1), +b.dataset.i);
+      if (k === 'back') { A.open = null; return dlg.animeDraw(); }
+      if (k === 'retry') { const u = A.open && A.open.url; if (u) { delete A.info[u]; return dlg.animeInfo(u, A.open.site); } return; }
+      if (k === 'tag') return dlg.animeTag(b.dataset.site, b.dataset.kind, b.dataset.path, b.dataset.label);
+      if (k === 'more') return dlg.animeMore();
       if (k === 'search') return dlg.animeSearch();
       if (k === 'eps') return dlg.animeEps(b.dataset.site, b.dataset.url);
       if (k === 'play') { const list = dlg.animeList(b.dataset.list), i = list.findIndex(x => x.url === b.dataset.url); return dlg.animePlay(list, Math.max(0, i), b.dataset.site); }
@@ -1167,9 +1313,59 @@ async function viewAnime(dlg, g) {
       if (k === 'video') { P.mode = 'video'; P.si = 0; return dlg.animeRedraw(); }
     });
   }
-  dlg.animeDraw = draw; dlg.animeSearch = search; dlg.animeEps = loadEps; dlg.animeList = listFor; dlg.animePlay = playAt; dlg.animeStop = stopPlay; dlg.animeRedraw = drawPlayer;
+  dlg.animeHist = async (k, i) => {
+    const e = (a.hist || [])[i];
+    if (k === 'show') { a.showHist = true; a.open = null; histLoad(); return draw(); }
+    if (k === 'back') { a.showHist = false; return draw(); }
+    if (k === 'clear') { if (!confirm('Clear your whole anime watch history?')) return; try { histSet((await api('DELETE', '/api/anime/history')).items); } catch (err) { toast(err.message, 'err'); } return draw(); }
+    if (!e) return;
+    if (k === 'del') { try { histSet((await api('DELETE', `/api/anime/history?site=${e.site}&url=${encodeURIComponent(e.url)}`)).items); } catch (err) { toast(err.message, 'err'); } return draw(); }
+    const isEp = e.url === e.epUrl;
+    if (k === 'cont' && isEp) { a.showHist = false; return playAt([{ url: e.epUrl, title: e.epTitle || e.title, n: e.epN, site: e.site }], 0, e.site); }
+    a.showHist = false; a.open = { site: e.site, url: e.url, title: e.title, thumb: e.thumb };
+    await loadInfo(e.url, e.site);
+    if (k === 'cont') {
+      const L = ((a.eps[epKey(e.site, e.url)] || {}).list) || [], j = L.findIndex(x => x.url === e.epUrl);
+      if (j >= 0) playAt(L, j, e.site);
+    }
+  };
+  dlg.animeDraw = draw; dlg.animeSearch = search; dlg.animeEps = loadEps; dlg.animeList = listFor; dlg.animePlay = playAt; dlg.animeStop = stopPlay; dlg.animeRedraw = drawPlayer; dlg.animeOpen = pageOpen; dlg.animeMore = () => pageLoad(false); dlg.animeRandom = pageRandom; dlg.animeInfo = loadInfo; dlg.animeTag = (site, kind, path, label) => { g.title = ''; g.fil = {}; g.startUrl = ''; g.hTag = g.hBrand = ''; g.label = label; g.src = site; if (site === 'hstream') { if (kind === 'studio') g.title = label; else g.hTag = path; } else g.startUrl = SITE_BASE[site] + path; if (dlg.resetBar) dlg.resetBar(); pageLoad(true); };
+  if (g.page) { histLoad(); if (!a.items && !a.busy) return pageLoad(true); return draw(); }
   if (!a.sites && !a.busy) return search();
   draw();
+}
+
+/* ---------- Anime page (sidebar): search or browse AniHentai and play with the same player ---------- */
+const AN = { el: null, dlg: null, g: { id: '__page', title: '', page: true, src: (() => { try { const v = localStorage.getItem('an-src'); return v === 'anihentai' || v === 'akih' || v === 'hstream' ? v : 'all'; } catch { return 'all'; } })() } };
+function animeLeave() {
+  const A = AN.dlg && AN.dlg.anime;
+  if (A && A.play) { AN.dlg.animeStop(); AN.dlg.animeDraw(); }
+}
+function animePage(m) {
+  if (AN.el && m.firstChild === AN.el) return; // already showing: keep a playing video untouched
+  if (!AN.el) {
+    const el = AN.el = document.createElement('div');
+    el.innerHTML = '<form class="an-bar" id="anform"><input id="anq" type="search" placeholder="Search anime by title…" autocomplete="off"><button class="btn primary" type="submit">Search</button><button class="btn" type="button" id="anlatest">Latest</button><select id="ansrc" aria-label="Source" style="width:auto"><option value="all">All sites</option><option value="anihentai">AniHentai</option><option value="akih">Aki-H</option><option value="hstream">HStream</option></select><button class="btn" type="button" id="anhist" title="Anime you have watched">🕘 History</button><button class="btn" type="button" id="anrand" title="Open a random anime">🎲 Random</button></form><div class="an-bar" id="anfilters"></div><div id="anbody"></div>';
+    AN.dlg = { el, body: el.querySelector('#anbody'), cur: () => S.view === 'anime' ? 'anime' : '' };
+    const go = () => { AN.g.startUrl = ''; AN.g.label = ''; AN.g.hTag = AN.g.hBrand = ''; AN.dlg.animeStop(); AN.dlg.animeSearch(); };
+    const srcSel = el.querySelector('#ansrc'); srcSel.value = AN.g.src;
+    srcSel.addEventListener('change', () => { AN.g.src = srcSel.value; try { localStorage.setItem('an-src', AN.g.src); } catch { } go(); });
+    AN.dlg.resetBar = () => { el.querySelector('#anq').value = ''; sels().forEach(s => s.value = ''); srcSel.value = AN.g.src; };
+    const hf = () => { AN.g.hTag = AN.g.hBrand = ''; sels().forEach(s => { const t = s.value ? s.selectedOptions[0].text : ''; if (/genre|tag/i.test(s.name)) AN.g.hTag = t; if (/studio|brand/i.test(s.name)) AN.g.hBrand = t; }); };
+    const sels = () => [...el.querySelectorAll('#anfilters select')];
+    el.querySelector('#anform').addEventListener('submit', e => { e.preventDefault(); AN.g.title = el.querySelector('#anq').value.trim(); if (AN.g.title) { AN.g.fil = {}; sels().forEach(s => s.value = ''); } go(); });
+    el.querySelector('#anfilters').addEventListener('change', () => { AN.g.fil = {}; sels().forEach(s => { if (s.value) AN.g.fil[s.name] = s.value; }); AN.g.title = ''; el.querySelector('#anq').value = ''; hf(); AN.g.startUrl = ''; AN.g.label = ''; AN.dlg.animeStop(); AN.dlg.animeSearch(); });
+    el.querySelector('#anlatest').addEventListener('click', () => { AN.g.title = ''; AN.g.fil = {}; el.querySelector('#anq').value = ''; sels().forEach(s => s.value = ''); go(); });
+    el.querySelector('#anhist').addEventListener('click', () => { AN.dlg.animeStop(); AN.dlg.animeHist('show'); });
+    el.querySelector('#anrand').addEventListener('click', () => { AN.dlg.animeStop(); AN.dlg.animeRandom(); });
+    api('GET', '/api/anime/options').then(o => {
+      const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+      setHTML(el.querySelector('#anfilters'), h`${(o.fields || []).map(f => h`<select name="${f.name}" aria-label="${cap(f.label)}"><option value="">${f.name === 'sort' || /sort|order/i.test(f.name) ? 'Sort: default' : 'Any ' + f.label}</option>${f.options.map(x => h`<option value="${x.v}">${x.l}</option>`)}</select>`)}`);
+    }).catch(() => { });
+  }
+  m.replaceChildren(AN.el);
+  m.scrollTop = 0;
+  viewAnime(AN.dlg, AN.g);
 }
 
 /* ---------- CG: VNDB screenshots + E-Hentai game-CG galleries ---------- */

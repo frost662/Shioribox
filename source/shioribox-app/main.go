@@ -25,7 +25,7 @@ import (
 //go:embed web
 var webFS embed.FS
 
-const version = "1.21.0"
+const version = "1.22.0"
 
 type App struct {
 	auto    autoState
@@ -142,9 +142,16 @@ func main() {
 	port := flag.Int("port", 17321, "port to listen on (localhost only)")
 	dataFlag := flag.String("data", "", "data directory (default: ./data next to the program)")
 	noBrowser := flag.Bool("no-browser", false, "do not open the browser on start")
+	browse := flag.String("browse", "", "(internal) show this page in a browser window")
+	browseTitle := flag.String("title", "ShioriBox", "(internal) title of the browser window")
+	parent := flag.Int("parent", 0, "(internal) process id of the main ShioriBox")
 	flag.Parse()
 
 	dataDir := resolveDataDir(*dataFlag)
+	if *browse != "" { // started by the main program as its browser window
+		runBrowseWindow(*browse, *browseTitle, dataDir, *parent)
+		return
+	}
 	os.MkdirAll(dataDir, 0o755)
 	if lf, err := os.OpenFile(filepath.Join(dataDir, "shioribox.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err == nil {
 		log.SetOutput(lf)
@@ -1038,6 +1045,9 @@ func (a *App) routes() http.Handler {
 
 	a.cgRoutes(mux)
 	a.animeRoutes(mux)
+	a.animeListRoutes(mux)
+	a.animeInfoRoutes(mux)
+	a.animeHistoryRoutes(mux)
 	a.streamRoutes(mux)
 	a.panicRoutes(mux)
 	a.autoRoutes(mux)
@@ -1061,6 +1071,23 @@ func (a *App) routes() http.Handler {
 			return
 		}
 		openBrowser(in.URL)
+		ok(w)
+	})
+	// Opens a supported site in a ShioriBox browser window (sites that can't be shown inside the page itself).
+	mux.HandleFunc("POST /api/browse", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			URL string `json:"url"`
+		}
+		if err := decode(r, &in); err != nil {
+			fail(w, 400, "bad request")
+			return
+		}
+		u, err := neturl.Parse(in.URL)
+		if err != nil || u.Scheme != "https" || !cgOpenAllowed(u.Hostname()) {
+			fail(w, 400, "that link can't be opened from here")
+			return
+		}
+		openAppBrowser(in.URL, "ShioriBox — "+strings.TrimPrefix(u.Hostname(), "www."))
 		ok(w)
 	})
 	mux.HandleFunc("POST /api/open-region", func(w http.ResponseWriter, r *http.Request) {

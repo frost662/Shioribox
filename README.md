@@ -27,6 +27,7 @@ ShioriBox brings your visual novel collection, play sessions, metadata, guides, 
 - **Guides and notes** — keep walkthroughs and useful information alongside each title.
 - **Japanese locale support** — launch games with the bundled Shiori Locale engine, Locale Emulator, or a custom launcher.
 - **Anime tab** — if a visual novel has an anime adaptation, its episodes are listed and play in a built-in player.
+- **Anime page** — a sidebar section to browse, search, and filter anime from AniHentai, Aki-H, and HStream, with details, episode lists, a random pick, and a watch history. AniHentai plays in the built-in player; HStream and Aki-H open in a separate ShioriBox browser window.
 - **Auto-add games** — add watched folders in Settings and new games found there are added to your library automatically.
 - **Library maintenance** — scan folders for games, import and export your library, and create or restore snapshots (the newest 3 are kept automatically).
 - **Automatic updates** — ShioriBox checks for a new version when it starts; open Settings → Updates and press *Update now*.

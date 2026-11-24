@@ -17,10 +17,83 @@ import (
 	"time"
 )
 
-type animeSite struct{ id, name, base string }
+type animeSite struct {
+	id, name, base string
+	cfg            *animeCfg // nil = the common WordPress-style layout (AniHentai)
+}
+
+// animeCfg describes how a site differs from the common layout.
+type animeCfg struct {
+	latest []string                 // listing paths tried for "latest"
+	search []string                 // search paths tried in order; %s is the escaped query
+	isCard func(segs []string) bool // does a link path look like a series card
+	random string                   // random-pick path
+	pageQ  string                   // query key for paging a listing that has no "next" link
+	genre  string                   // path of a tag page; %s is the tag
+}
+
+var akihReserved = map[string]bool{"latest": true, "popular": true, "az-list": true, "filter": true, "random": true, "genre": true, "episode": true,
+	"search": true, "page": true, "assets": true, "login": true, "register": true, "contact": true, "dmca": true, "privacy": true, "terms": true,
+	"about": true, "news": true, "tag": true, "studio": true, "year": true, "category": true, "wp-content": true, "wp-json": true, "feed": true}
+
+var akihCfg = &animeCfg{
+	latest: []string{"/latest/", "/"},
+	search: []string{"/search?keyword=%s", "/filter/?keyword=%s", "/?s=%s", "/search?q=%s"},
+	isCard: func(segs []string) bool {
+		return len(segs) == 1 && !akihReserved[strings.ToLower(segs[0])] && !strings.Contains(segs[0], ".")
+	},
+	random: "/random/",
+	pageQ:  "page",
+	genre:  "/genre/%s/",
+}
 
 var animeSites = []*animeSite{
-	{"anihentai", "AniHentai", "https://anihentai.com"},
+	{"anihentai", "AniHentai", "https://anihentai.com", nil},
+	{"akih", "Aki-H", "https://aki-h.com", akihCfg},
+}
+
+func (s *animeSite) cardOK(raw string) bool {
+	if s.cfg == nil || s.cfg.isCard == nil {
+		return animeCardOK(raw)
+	}
+	u, err := neturl.Parse(raw)
+	if err != nil {
+		return false
+	}
+	segs := strings.FieldsFunc(u.Path, func(r rune) bool { return r == '/' })
+	return s.cfg.isCard(segs)
+}
+
+func (s *animeSite) latestPaths() []string {
+	if s.cfg != nil && len(s.cfg.latest) > 0 {
+		return s.cfg.latest
+	}
+	return []string{"/hentai/", "/"}
+}
+
+func (s *animeSite) searchPaths(q string) []string {
+	if s.cfg != nil && len(s.cfg.search) > 0 {
+		var out []string
+		for _, p := range s.cfg.search {
+			out = append(out, strings.Replace(p, "%s", neturl.QueryEscape(q), 1))
+		}
+		return out
+	}
+	return []string{"/?s=" + neturl.QueryEscape(q), "/search/" + neturl.PathEscape(q) + "/"}
+}
+
+func (s *animeSite) randomPath() string {
+	if s.cfg != nil && s.cfg.random != "" {
+		return s.cfg.random
+	}
+	return "/random/"
+}
+
+func (s *animeSite) genrePath(tag string) string {
+	if s.cfg != nil && s.cfg.genre != "" {
+		return fmt.Sprintf(s.cfg.genre, neturl.PathEscape(tag))
+	}
+	return "/genre/" + neturl.PathEscape(tag) + "/"
 }
 
 func animeSiteByID(id string) *animeSite {
@@ -35,7 +108,7 @@ func animeSiteByID(id string) *animeSite {
 // cgOpenAllowed lists the sites the "open in browser" button may open.
 func cgOpenAllowed(host string) bool {
 	host = strings.ToLower(host)
-	hosts := []string{"e-hentai.org", "hitomi.la", "hentaiera.com", "hentaienvy.com"}
+	hosts := []string{"e-hentai.org", "hitomi.la", "hentaiera.com", "hentaienvy.com", "hstream.moe"}
 	for _, s := range animeSites {
 		hosts = append(hosts, strings.TrimPrefix(s.base, "https://"))
 	}
@@ -53,6 +126,7 @@ type AnimeItem struct {
 	Thumb   string `json:"thumb,omitempty"`
 	Episode bool   `json:"episode"` // a single episode page rather than a series page
 	N       int    `json:"n,omitempty"`
+	Site    string `json:"site,omitempty"` // which source this came from
 }
 
 // animeMatch: every word of the search is in the title, or at least 60% of its meaningful words (titles on these
@@ -90,6 +164,8 @@ type AnimeSiteResult struct {
 	Debug []string    `json:"debug,omitempty"` // what was asked and how many links came back, for troubleshooting
 }
 
+var reAJunkAlt = regexp.MustCompile(`(?i)cover|unavailable|poster|thumbnail`)
+
 var (
 	reAAnchor  = regexp.MustCompile(`(?is)<a\b([^>]*?)>(.*?)</a>`)
 	reAHref    = regexp.MustCompile(`(?is)\bhref\s*=\s*"([^"]+)"`)
@@ -100,13 +176,41 @@ var (
 	reAGeneric = regexp.MustCompile(`(?i)^(?:watch(?: now| episode| online)?|play|read more|more|view|home|next|prev(?:ious)?|\d+|»|«)$`)
 )
 
+// animeCardImg finds the picture of the card (<article> or <li>) an anchor sits in, for sites that put the picture
+// outside the title link.
+func animeCardImg(page string, from, to int) string {
+	start := strings.LastIndex(page[:from], "<article")
+	if i := strings.LastIndex(page[:from], "<li"); i > start {
+		start = i
+	}
+	if start < 0 || from-start > 3000 {
+		return ""
+	}
+	end := to + 1500
+	if end > len(page) {
+		end = len(page)
+	}
+	region := page[start:end]
+	for _, tag := range []string{"</article>", "</li>"} {
+		if i := strings.Index(region[to-start:], tag); i >= 0 {
+			region = region[:to-start+i]
+		}
+	}
+	if im := reHEImg.FindString(region); im != "" {
+		src, _ := heImgSrc(im)
+		return src
+	}
+	return ""
+}
+
 // animeLinks collects every internal link of a page with the best title and picture found for it.
 func animeLinks(s *animeSite, page string) []AnimeItem {
 	baseU, _ := neturl.Parse(s.base)
 	var order []string
 	by := map[string]*AnimeItem{}
 	textTitle := map[string]bool{}
-	for _, m := range reAAnchor.FindAllStringSubmatch(page, -1) {
+	for _, l := range reAAnchor.FindAllStringSubmatchIndex(page, -1) {
+		m := []string{page[l[0]:l[1]], page[l[2]:l[3]], page[l[4]:l[5]]}
 		hm := reAHref.FindStringSubmatch(m[1])
 		if hm == nil {
 			continue
@@ -117,7 +221,7 @@ func animeLinks(s *animeSite, page string) []AnimeItem {
 			continue
 		}
 		host := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
-		if host != strings.TrimPrefix(baseU.Hostname(), "www.") || reASkipURL.MatchString(u.EscapedPath()+map[bool]string{true: "?", false: ""}[u.RawQuery != ""]) {
+		if host != strings.TrimPrefix(baseU.Hostname(), "www.") || u.EscapedPath() == "" || reASkipURL.MatchString(u.EscapedPath()+map[bool]string{true: "?", false: ""}[u.RawQuery != ""]) {
 			continue
 		}
 		u.Fragment, u.RawQuery = "", ""
@@ -133,6 +237,12 @@ func animeLinks(s *animeSite, page string) []AnimeItem {
 		if im := reHEImg.FindString(inner); im != "" {
 			src, alt = heImgSrc(im)
 		}
+		if src == "" && it.Thumb == "" {
+			src = animeCardImg(page, l[0], l[1])
+		}
+		if f := strings.Fields(src); len(f) > 1 {
+			src = strings.TrimSuffix(f[0], ",")
+		}
 		if src != "" && it.Thumb == "" {
 			full := heAbs(s.base, src)
 			heRegisterHost(full, s.base+"/")
@@ -142,12 +252,21 @@ func animeLinks(s *animeSite, page string) []AnimeItem {
 		if t := reATitle.FindStringSubmatch(m[1]); t != nil {
 			title = unesc(t[1])
 		}
-		if txt := unesc(reHEImg.ReplaceAllString(inner, "")); title == "" && len([]rune(txt)) > 2 && !reAGeneric.MatchString(txt) {
-			title = txt
+		if title == "" {
+			if t, ok := animeCardTitle(inner); ok {
+				title = t
+			} else if txt := unesc(reHEImg.ReplaceAllString(inner, "")); len([]rune(txt)) > 2 && !reAGeneric.MatchString(txt) {
+				// plain text link: use it; a card full of badges and tags: name it from its address instead
+				if strings.Count(inner, "<") <= 4 {
+					title = txt
+				} else if t := animeSlugTitle(key); t != "" {
+					title = t
+				}
+			}
 		}
 		if title != "" && (!textTitle[key] || len(title) > len(it.Title)) {
 			it.Title, textTitle[key] = title, true
-		} else if it.Title == "" && alt != "" {
+		} else if it.Title == "" && alt != "" && !reAJunkAlt.MatchString(alt) {
 			it.Title = unesc(alt)
 		}
 	}
@@ -195,7 +314,7 @@ func animeSearchSite(s *animeSite, queries []string) AnimeSiteResult {
 	okAny := false
 	for _, q := range queries {
 		// WordPress sites answer /?s=...; some also have /search/<words>/
-		for _, path := range []string{"/?s=" + neturl.QueryEscape(q), "/search/" + neturl.PathEscape(q) + "/"} {
+		for _, path := range s.searchPaths(q) {
 			b, err := animeGet(s, s.base+path)
 			if err != nil {
 				lastErr = err
@@ -280,6 +399,51 @@ func animeSearch(q, alt string) []AnimeSiteResult {
 	return out
 }
 
+// animeBrowse lists what a site's front page shows (latest series and episodes) for the Anime page.
+func animeBrowse() []AnimeSiteResult {
+	animeMu.Lock()
+	if c, ok := animeCache["\x00browse"]; ok && time.Since(c.at) < 10*time.Minute {
+		animeMu.Unlock()
+		return c.res
+	}
+	animeMu.Unlock()
+	out := make([]AnimeSiteResult, len(animeSites))
+	var wg sync.WaitGroup
+	for i, s := range animeSites {
+		wg.Add(1)
+		go func(i int, s *animeSite) {
+			defer wg.Done()
+			res := AnimeSiteResult{ID: s.id, Name: s.name, Base: s.base, Items: []AnimeItem{}}
+			b, err := animeGet(s, s.base+"/")
+			if err != nil {
+				res.Error = err.Error()
+				out[i] = res
+				return
+			}
+			links := animeLinks(s, string(b))
+			res.Items = links
+			if len(res.Items) > 48 {
+				res.Items = res.Items[:48]
+			}
+			res.Debug = append(res.Debug, fmt.Sprintf("front page → %d links", len(links)))
+			out[i] = res
+		}(i, s)
+	}
+	wg.Wait()
+	failed := false
+	for _, r := range out {
+		if r.Error != "" {
+			failed = true
+		}
+	}
+	if !failed {
+		animeMu.Lock()
+		animeCache["\x00browse"] = animeCached{time.Now(), out}
+		animeMu.Unlock()
+	}
+	return out
+}
+
 // animeEpisodes reads a series page and returns its episode links, lowest number first.
 func animeEpisodes(s *animeSite, pageURL string) ([]AnimeItem, error) {
 	u, err := neturl.Parse(pageURL)
@@ -290,19 +454,8 @@ func animeEpisodes(s *animeSite, pageURL string) ([]AnimeItem, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", s.name, err)
 	}
-	var eps []AnimeItem
-	for _, it := range animeLinks(s, string(b)) {
-		if it.URL == pageURL || !it.Episode {
-			continue
-		}
-		eps = append(eps, it)
-	}
-	sort.SliceStable(eps, func(i, j int) bool {
-		if eps[i].N != eps[j].N {
-			return eps[i].N < eps[j].N
-		}
-		return false
-	})
+	eps := animeEpisodeLinks(s, string(b), pageURL)
+	sort.SliceStable(eps, func(i, j int) bool { return eps[i].N < eps[j].N })
 	if len(eps) > 200 {
 		eps = eps[:200]
 	}
@@ -317,6 +470,9 @@ func (a *App) animeRoutes(mux *http.ServeMux) {
 			return
 		}
 		writeJSON(w, 200, map[string]any{"sites": animeSearch(q.Get("q"), q.Get("alt"))})
+	})
+	mux.HandleFunc("GET /api/anime/browse", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{"sites": animeBrowse()})
 	})
 	mux.HandleFunc("GET /api/anime/episodes", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()

@@ -448,6 +448,16 @@ func animeStream(w http.ResponseWriter, r *http.Request) {
 func (a *App) streamRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/anime/source", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
+		if q.Get("site") == hstreamID {
+			emb, err := hstreamEmbed(q.Get("url"))
+			if err != nil {
+				fail(w, 400, err.Error())
+				return
+			}
+			// The site refuses to be shown inside other apps and signs its video requests itself: hand back the page to open.
+			writeJSON(w, 200, map[string]any{"sources": []AnimeSource{}, "embeds": []string{}, "external": emb[0]})
+			return
+		}
 		s := animeSiteByID(q.Get("site"))
 		if s == nil {
 			fail(w, 400, "unknown site")
@@ -463,6 +473,11 @@ func (a *App) streamRoutes(mux *http.ServeMux) {
 		}
 		if embeds == nil {
 			embeds = []string{}
+		}
+		if s.id == "akih" && len(src) == 0 && len(embeds) == 0 {
+			// the player is built by the site's own script: until that is read, show the page in the app's browser window
+			writeJSON(w, 200, map[string]any{"sources": src, "embeds": embeds, "external": q.Get("url")})
+			return
 		}
 		writeJSON(w, 200, map[string]any{"sources": src, "embeds": embeds})
 	})

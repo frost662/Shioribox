@@ -43,6 +43,7 @@ func runUI(app *App, url, dataDir string) {
 		runBrowserUI(app, url, dataDir)
 		return
 	}
+	abDir = dataDir
 	wvDir := filepath.Join(dataDir, "webview")
 	clearWebCache(wvDir)
 	if os.Getenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") == "" {

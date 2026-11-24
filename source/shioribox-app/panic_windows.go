@@ -267,6 +267,7 @@ func (p *winPanic) tray(op uintptr) {
 func (p *winPanic) removeTray() { p.tray(nimDelete) }
 
 func (p *winPanic) hide() {
+	closeAppBrowser()
 	p.mu.Lock()
 	if p.hidden {
 		p.mu.Unlock()
